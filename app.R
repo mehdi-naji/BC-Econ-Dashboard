@@ -7,6 +7,7 @@ library(tidyverse)
 library(lubridate)
 library(plotly)
 library(leaflet)
+options(shiny.autoreload = TRUE)
 
 # =================================================================== #
 # --------------------------DATA ------------------------------------ #
@@ -20,47 +21,64 @@ regions <- unique(df$GEO)
 Provinces <- regions[regions != "Canada"]
 year_range <- unique(df$Year)
 year_initial <- min(year_range)
-category_range <- unique(df$`Household expenditures, summary-level categories`)
+category_range <- unique(df$Category)
 
 
 # =================================================================== #
 # ------------------------------SHINY UI----------------------------- #
 # =================================================================== #
 
-options(shiny.autoreload = TRUE)
 
 # Define the UI
 ui <- fluidPage(
+  theme = bslib::bs_theme(bootswatch = "darkly"),
   titlePanel("Province and Year Bar Charts"),
   sidebarLayout(
     sidebarPanel(
-      selectInput("province", "Select Province:", choices = Provinces),
+      # selectInput("province", "Select Province:", choices = Provinces),
       selectInput("year", "Select Year:", choices = year_range),
+      uiOutput("province_dropdown"),
       selectInput("category", "Expenditure Category", choices =  category_range)
     ),
     mainPanel(
-      plotOutput("barChart1")
+      plotlyOutput("barChart1")
     )
   )
 )
 
-# Define the server
-server <- function(input, output) {
-  # Filter data based on user input
+# =================================================================== #
+# ------------------------------SHINY SERVER------------------------- #
+# =================================================================== #
+
+server <- function(input, output, session) {
+  thematic::thematic_shiny()
+  
+  # ======Get Data for Reactivity====== #
   filteredData <- reactive({
     df %>% filter(GEO == input$province, 
                     Year == input$year,
-                    `Household expenditures, summary-level categories` == input$category,
-                    `Before-tax household income quintile` != "All quintiles"
+                    Category == input$category,
+                    Quintile != "All quintiles"
                     )
   })
   
   
-  # Create Bar Chart 1
+  # ======Server Side of Province Input====== #
+  output$province_dropdown <- renderUI({
+    selectInput("province", 
+                "Select Provinces", 
+                Provinces, 
+                multiple = TRUE, 
+                selected = c('British Columbia')
+                )
+  })
   
-output$barChart1 <- renderPlot({
+  
+  # ======Plot 1 - Annual Average Line Plot====== #
+  
+output$barChart1 <- renderPlotly({
   ggplot(filteredData()) +
-    aes(x=reorder(`Before-tax household income quintile`, VALUE), 
+    aes(x=reorder(Quintile, VALUE), 
         y=VALUE, 
         fill=GEO) +
     geom_col(stat="identity", color="white", position=position_dodge()) +
@@ -79,5 +97,10 @@ output$barChart1 <- renderPlot({
           axis.text.x = element_text(angle = 90))
 })
 }
+
+
+
 # Run the Shiny app
 shinyApp(ui = ui, server = server)
+
+
