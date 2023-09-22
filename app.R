@@ -12,8 +12,16 @@ library(leaflet)
 # --------------------------DATA ------------------------------------ #
 # =================================================================== #
 
-url = "https://raw.githubusercontent.com/mehdi-naji/BC-Econ-Dashboard/main/data/processed/processed_df.csv?token=GHSAT0AAAAAACH6HVANUOV5JLFUJRKZSGJAZIN2R5A"
-df = read.csv(url, header=TRUE)
+url <- "https://github.com/mehdi-naji/BC-Econ-Dashboard/raw/main/data/processed/processed_df.csv"
+df <- read.csv(url, header = TRUE)
+
+
+regions <- unique(df$GEO)
+Provinces <- regions[regions != "Canada"]
+year_range <- unique(df$Year)
+year_initial <- min(year_range)
+category_range <- unique(df$`Household expenditures, summary-level categories`)
+
 
 # =================================================================== #
 # ------------------------------SHINY UI----------------------------- #
@@ -21,36 +29,55 @@ df = read.csv(url, header=TRUE)
 
 options(shiny.autoreload = TRUE)
 
+# Define the UI
 ui <- fluidPage(
-  theme = bslib::bs_theme(bootswatch = "darkly"),
-  titlePanel('Climate Metrics in Canada'),
-  
-  fluidRow(
-    column(3,
-           sliderInput("range", "Year Range:", 
-                       min = 1940, max = 2019,
-                       value = c(1940, 2019), step = 5,
-                       sep = ""),
-           uiOutput("cities_dropdown"),
-           radioButtons('option', 'Select Metric', options),
-           selectInput("dataset", "Choose a dataset:", choices = c("tempreture", "precipitation")),
-           downloadButton("downloadData", "Download"),
-           
-           leafletOutput("map")          
+  titlePanel("Province and Year Bar Charts"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("province", "Select Province:", choices = Provinces),
+      selectInput("year", "Select Year:", choices = year_range),
+      selectInput("category", "Expenditure Category", choices =  category_range)
     ),
-    
-    
-    column(4,
-           plotlyOutput("line_plot"),
-           plotlyOutput("line_plot2")),
-    column(5,
-           plotlyOutput("month_averages"),
-           plotlyOutput("diff_plot"))
+    mainPanel(
+      plotOutput("barChart1")
+    )
   )
 )
 
-
-server <- function(input, output, session) {
+# Define the server
+server <- function(input, output) {
+  # Filter data based on user input
+  filteredData <- reactive({
+    df %>% filter(GEO == input$province, 
+                    Year == input$year,
+                    `Household expenditures, summary-level categories` == input$category,
+                    `Before-tax household income quintile` != "All quintiles"
+                    )
+  })
+  
+  
+  # Create Bar Chart 1
+  
+output$barChart1 <- renderPlot({
+  ggplot(filteredData()) +
+    aes(x=reorder(`Before-tax household income quintile`, VALUE), 
+        y=VALUE, 
+        fill=GEO) +
+    geom_col(stat="identity", color="white", position=position_dodge()) +
+    # scale_y_continuous(breaks = seq(-30, 40, by = 5))+
+    theme(panel.grid.major.y = element_line(color = "grey",
+                                            size = 0.5,
+                                            linetype = 2))+ 
+    ggtitle(paste0("Monthly Average of ", 
+                   input$year)) +
+    xlab("Month") + 
+    ylab(paste("Average Monthly",
+               input$year))+
+    theme(text = element_text(size=12),
+          plot.title = element_text(face = "bold"),
+          axis.title = element_text(face = "bold"),
+          axis.text.x = element_text(angle = 90))
+})
 }
-shinyApp(ui, server)
-
+# Run the Shiny app
+shinyApp(ui = ui, server = server)
