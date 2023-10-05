@@ -21,5 +21,4 @@ df <- df |> select(Year,
                    GrowthRate,
                    VALUE)
 
-write.csv(df, file = "~/BC-Econ-Dashboard/data/processed/processed_df.csv")
-
+write.csv(df, file = "~/BC-Econ-Dashboard/data/processed/HouseholdSpending.csv")
