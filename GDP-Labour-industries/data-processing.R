@@ -181,8 +181,13 @@ Sectors_GDP <- c("Agriculture, forestry, fishing and hunting",
 GDP_dashdata <- GDP_df[grepl(paste(Sectors_GDP, collapse = "|"),  GDP_df$`North American Industry Classification System (NAICS)`), ] |> 
   filter(  Value == "Chained (2012) dollars") |>
   select(Year, GEO, `North American Industry Classification System (NAICS)`, VALUE , SCALAR_FACTOR ) |>
-  rename(NAICS = `North American Industry Classification System (NAICS)`)
-
+  rename(NAICS = `North American Industry Classification System (NAICS)`) |>
+  mutate(NAICS = case_when(
+    NAICS == "Information and cultural industries [51]" ~ "Information, culture and recreation [51, 71]",
+    NAICS == "Arts, entertainment and recreation [71]" ~ "Information, culture and recreation [51, 71]",
+    TRUE ~ NAICS))|>
+  group_by(Year, GEO, NAICS, VALUE , SCALAR_FACTOR ) |>
+    summarise(VALUE = sum(VALUE))
 
 write.csv(GDP_dashdata, file = "~/BC-Econ-Dashboard/data/processed/GDP_Industry_dash.csv")
 
@@ -213,16 +218,19 @@ EMPL_df$VALUE <- as.numeric(EMPL_df$VALUE)
 
 EMPL_dashdata <- EMPL_df |>
         filter(grepl(paste(Sectors_EMPL, collapse = "|"),  `North American Industry Classification System (NAICS)`)) |>
-  filter(Sex == "Both sexes",
+        filter(Sex == "Both sexes",
          `Age group` == "15 years and over",
          `Labour force characteristics` %in% c("Employment", "Unemployment rate")) |>
         select(REF_DATE, GEO, `Labour force characteristics`, `North American Industry Classification System (NAICS)`, Sex, `Age group`, UOM, SCALAR_FACTOR, VALUE, Year) |>
         mutate_all(~replace(., is.na(.), 0))|>
         mutate(`North American Industry Classification System (NAICS)` = ifelse(grepl(paste(c("111", "113", "114"), collapse = "|"),  `North American Industry Classification System (NAICS)`),
-                                                                                "Agriculture, forestry, fishing and hunting", `North American Industry Classification System (NAICS)`))|>
+                                                                                "Agriculture, forestry, fishing and hunting [11]", `North American Industry Classification System (NAICS)`))|>
         group_by(Year, GEO, `North American Industry Classification System (NAICS)`,   `Labour force characteristics`, Sex, `Age group`, UOM, SCALAR_FACTOR)|>
           summarise(VALUE = ifelse(`Labour force characteristics` == "Employmnet", sum(VALUE), max(VALUE))) |>
-        rename(NAICS = `North American Industry Classification System (NAICS)`)
-
+        rename(NAICS = `North American Industry Classification System (NAICS)`) |>
+        mutate (NAICS = case_when(
+        NAICS == "Mining, quarrying, and oil and gas extraction [21, 2100]" ~ "Mining, quarrying, and oil and gas extraction [21]",
+        TRUE ~ NAICS))
+        
 write.csv(EMPL_dashdata, file = "~/BC-Econ-Dashboard/data/processed/EMPL_Industry_dash.csv")
 
