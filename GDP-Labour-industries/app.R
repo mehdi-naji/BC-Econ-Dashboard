@@ -60,11 +60,11 @@ server <- function(input, output, session) {
   # ======Get Data for Reactivity====== #
   filteredData <- reactive({
     df %>% filter(GEO %in% input$province, 
-                    Year == input$year,
-                    Category %in% input$category,
-                    Quintile != "All quintiles"
+                  Year == input$year,
+                  Category %in% input$category,
+                  Quintile != "All quintiles"
                   
-                    )
+    )
   })
   
   
@@ -75,7 +75,7 @@ server <- function(input, output, session) {
                 Provinces, 
                 multiple = TRUE, 
                 selected = c('British Columbia')
-                )
+    )
   })
   
   # ======Server Side of Category Input====== #

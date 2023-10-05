@@ -215,7 +215,8 @@ EMPL_dashdata <- EMPL_df |>
         filter(grepl(paste(Sectors_EMPL, collapse = "|"),  `North American Industry Classification System (NAICS)`)) |>
   filter(Sex == "Both sexes",
          `Age group` == "15 years and over",
-         `Labour force characteristics` %in% c("Employment", "Unemployment rate")) |>
+         `Labour force characteristics` %in% c("Employment", "Unemployment rate"),
+         GEO == "Alberta") |>
         select(REF_DATE, GEO, `Labour force characteristics`, `North American Industry Classification System (NAICS)`, Sex, `Age group`, UOM, SCALAR_FACTOR, VALUE, Year) |>
         mutate_all(~replace(., is.na(.), 0))|>
         mutate(`North American Industry Classification System (NAICS)` = ifelse(grepl(paste(c("111", "113", "114"), collapse = "|"),  `North American Industry Classification System (NAICS)`),
