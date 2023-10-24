@@ -1,0 +1,12 @@
+name: Household_Spending
+title: Household_Spending
+username: mehdinaji
+account: mehdinaji
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 10151465
+bundleId: 7787417
+url: https://mehdinaji.shinyapps.io/Household_Spending/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

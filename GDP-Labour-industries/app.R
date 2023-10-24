@@ -3,6 +3,7 @@
 # =================================================================== #
 library(shiny)
 library(ggplot2)
+library(tidyr)
 library(tidyverse)
 library(lubridate)
 library(plotly)
@@ -14,16 +15,22 @@ options(shiny.autoreload = TRUE)
 # --------------------------DATA ------------------------------------ #
 # =================================================================== #
 
-url <- "https://github.com/mehdi-naji/BC-Econ-Dashboard/raw/main/data/processed/HouseholdSpending.csv"
-df <- read.csv(url, header = TRUE)
+url_GDP <- "https://github.com/mehdi-naji/BC-Econ-Dashboard/raw/main/data/processed/GDP_Industry_dash.csv"
+url_EMPL <- "https://github.com/mehdi-naji/BC-Econ-Dashboard/raw/main/data/processed/EMPL_Industry_dash.csv"
+
+GDP_df <- read.csv(url_GDP, header = TRUE)
+EMPL_df <- read.csv(url_EMPL, header = TRUE)
 
 
-regions <- unique(df$GEO)
-Provinces <- regions[regions != "Canada"]
-year_range <- unique(df$Year)
-year_initial <- min(year_range)
-category_range <- unique(df$Category)
-Categories <- unique(df$Category)
+
+
+Provinces <- intersect(unique(EMPL_df$GEO), unique(GDP_df$GEO))
+Industries <- intersect(unique(EMPL_df$NAICS), unique(GDP_df$NAICS))
+year_range <- union(unique(EMPL_df$Year), unique(GDP_df$Year))
+year_min <- min(year_range)
+year_max <- max(year_range)
+options <- c('Employment', 'Unemployment Rate')
+
 
 # =================================================================== #
 # ------------------------------SHINY UI----------------------------- #
@@ -36,11 +43,13 @@ ui <- fluidPage(
   titlePanel("Households' Spending Distribution and Growth Incidence Chart"),
   sidebarLayout(
     sidebarPanel(
-      # selectInput("province", "Select Province:", choices = Provinces),
-      selectInput("year", "Select Year:", choices = year_range),
+      sliderInput("range", "Year Range:", 
+                  min = year_min, max = year_max,
+                  value = c(year_min, year_max), step = 5,
+                  sep = ""),
       uiOutput("province_dropdown"),
-      uiOutput("category_dropdown"),
-      #selectInput("category", "Expenditure Category", choices =  category_range),
+      uiOutput("industry_dropdown"),
+      radioButtons('option', 'Select Metric', options),
       verbatimTextOutput("textbox")
     ),
     mainPanel(
@@ -58,14 +67,23 @@ server <- function(input, output, session) {
   thematic::thematic_shiny()
   
   # ======Get Data for Reactivity====== #
-  filteredData <- reactive({
-    df %>% filter(GEO %in% input$province, 
-                  Year == input$year,
-                  Category %in% input$category,
-                  Quintile != "All quintiles"
-                  
-    )
+  filtered_df <- reactive({
+      df |> filter(GEO %in% input$province, 
+                  Year >= input$range[1] & Year <= input$range[2],
+                  NAICS %in% input$industry) 
   })
+  
+    # filtered_EMPL <- reactive({
+  #   if (input$option == "Employment"){
+  #     EMPL_df |> filter(Labour.force.characteristics == "Emplyment",
+  #                             GEO %in% input$province, 
+  #                             Year >= input$range[1] & Year <= input$range[2],
+  #                             NAICS %in% input$industry)
+  #   } else {EMPL_df |> filter(`Labour force characteristics` == "Unemployment rate",
+  #                                   GEO %in% input$province, 
+  #                                   Year >= input$range[1] & Year <= input$range[2],
+  #                                   NAICS %in% input$industry)}
+  # })
   
   
   # ======Server Side of Province Input====== #
@@ -78,32 +96,32 @@ server <- function(input, output, session) {
     )
   })
   
-  # ======Server Side of Category Input====== #
-  output$category_dropdown <- renderUI({
-    selectInput("category", 
-                "Select Categories", 
-                Categories, 
+  # ======Server Side of Industry Input====== #
+  output$industry_dropdown <- renderUI({
+    selectInput("industry", 
+                "Select Industries", 
+                Industries, 
                 multiple = TRUE, 
-                selected = c('Total expenditure')
+                selected = c('Construction [23]')
     )
   })
   
   # ======Plot 1 - Annual Average Line Plot======
   output$barChart1 <- renderPlotly({
-    p1 <- ggplot(filteredData()) +
-      aes(x = reorder(Quintile, VALUE), 
-          y = VALUE, 
-          fill = interaction(GEO, Category)) + 
-      geom_col(position = position_dodge()) +
+    p1 <- ggplot(filtered_df()) +
+      aes(x = Year, 
+          y = GDP, 
+          color = interaction(GEO, NAICS)) + 
+      geom_line(position = position_dodge()) +
       theme(panel.grid.major.y = element_line(color = "grey",
                                               size = 0.5,
                                               linetype = 2)) + 
       ggtitle(paste0("Distribution of Expenditures in Current Dollars")) +
-      ylab(paste("Dollars", input$year)) +
+      ylab(paste("Dollars", "input$year")) +
       xlab("") +
       theme(text = element_text(size = 12),
             plot.title = element_text(face = "bold")) +
-      labs(fill = "Combined Legend")
+      labs(color = "Combined Legend")
     
     # Convert ggplot to plotly
     p1 <- ggplotly(p1)
@@ -119,23 +137,24 @@ server <- function(input, output, session) {
   # ======Plot 2 - Annual Average Line Plot====== #
   p2 <- ggplot()  # Initialize empty plot
   output$barChart2 <- renderPlotly({
-    p2 <- ggplot(filteredData()) +
-      aes(x = reorder(Quintile, VALUE), 
-          y = GrowthRate * 100, 
-          fill = interaction(GEO, Category, name = "Legend")) +  # Specify the same name for the legend
-      geom_col(position = position_dodge()) +
-      theme(panel.grid.major.y = element_line(color = "grey",
-                                              size = 0.5,
-                                              linetype = 2)) + 
-      ggtitle("Distribution of Expenditure Growth in Percent Change") +
-      ylab("Growth rate") +
-      xlab("")+
-      scale_y_continuous(labels = scales::percent_format(scale = 1)) +
-      theme(text = element_text(size = 12),
-            plot.title = element_text(face = "bold"),
-            axis.title = element_text(face = "bold"))+
-      labs(fill = "Combined Legend")+
-      theme(legend.position = "none")
+    p2 <- ggplot(filtered_df()) +
+      aes(x = Year, 
+          y = input$option, 
+          fill = interaction(GEO, NAICS, name = "Legend")) 
+    # +  
+    #   geom_col(position = position_dodge()) +
+    #   theme(panel.grid.major.y = element_line(color = "grey",
+    #                                           size = 0.5,
+    #                                           linetype = 2)) +
+    #   ggtitle("Distribution of Expenditure Growth in Percent Change") +
+    #   ylab("Growth rate") +
+    #   xlab("")+
+    #   scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+    #   theme(text = element_text(size = 12),
+    #         plot.title = element_text(face = "bold"),
+    #         axis.title = element_text(face = "bold"))+
+    #   labs(fill = "Combined Legend")+
+    #   theme(legend.position = "none")
     
     # Return the ggplot object
     p2 %>% plotly::ggplotly()
