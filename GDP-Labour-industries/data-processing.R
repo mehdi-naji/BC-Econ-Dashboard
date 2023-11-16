@@ -4,6 +4,14 @@ library(tidyverse)
 
 # GDP - Sector - Provinces
 
+
+
+
+
+
+
+
+
 # GDP by industry and province
 GDP_df <- statcan_download_data("36-10-0402-01", "eng")
 
@@ -33,7 +41,7 @@ Sectors_GDP <- c("Agriculture, forestry, fishing and hunting",
                  "\\[81\\]")
 
 GDP_dashdata <- GDP_df[grepl(paste(Sectors_GDP, collapse = "|"),  GDP_df$`North American Industry Classification System (NAICS)`), ] |> 
-  filter(  Value == "Chained (2012) dollars") |>
+  filter(  Value == "Chained (2017) dollars") |>
   select(Year, GEO, `North American Industry Classification System (NAICS)`, VALUE , SCALAR_FACTOR ) |>
   rename(NAICS = `North American Industry Classification System (NAICS)`) |>
   mutate(NAICS = case_when(
@@ -49,6 +57,54 @@ GDP_dashdata <- GDP_dashdata |>
   arrange(Year, GEO, NAICS, SCALAR_FACTOR) |> 
   group_by(GEO, NAICS, SCALAR_FACTOR) |>
   mutate(GDPG = (GDP/lag(GDP) - 1)*100)
+
+
+
+# Investment by industry and province
+INVS_df <- statcan_download_data("34-10-0035-01", "eng")
+
+INVS_df$REF_DATE <- as.Date(INVS_df$REF_DATE, origin = "2006-01-01")
+INVS_df$Year <- format(INVS_df$REF_DATE, "%Y")
+
+Sectors_INVS <- c("Agriculture, forestry, fishing and hunting",
+                  "Mining, quarrying, and oil and gas extraction",
+                  "Utilities",
+                  "Construction",
+                  "Manufacturing",
+                  "Wholesale trade",
+                  "44-45",
+                  "Transportation and warehousing",
+                  "Information and cultural industries",
+                  "Finance and insurance",
+                  "Real estate and rental and leasing",
+                  "Professional, scientific and technical services",
+                  "Management of companies and enterprises",
+                  "Administrative and support, waste management and remediation services",
+                  "Educational services \\[61\\]",
+                  "Health care and social assistance",
+                  "Arts, entertainment and recreation",
+                  "Accommodation and food services",
+                  "Other services (except public administration)",
+                  "Public administration",
+                  "\\[81\\]")
+
+INVS_dashdata <- INVS_df[grepl(paste(Sectors_INVS, collapse = "|"),  INVS_df$`North American Industry Classification System (NAICS)`), ] |> 
+  filter(  `Capital and repair expenditures` == "Capital expenditures") |>
+  select(Year, GEO, `North American Industry Classification System (NAICS)`, VALUE , SCALAR_FACTOR ) |>
+  rename(NAICS = `North American Industry Classification System (NAICS)`) |>
+  mutate(NAICS = case_when(
+    NAICS == "Information and cultural industries [51]" ~ "Information, culture and recreation [51, 71]",
+    NAICS == "Arts, entertainment and recreation [71]" ~ "Information, culture and recreation [51, 71]",
+    TRUE ~ NAICS))|>
+  group_by(Year, GEO, NAICS, SCALAR_FACTOR ) |>
+  summarise(VALUE = sum(VALUE))
+
+
+INVS_dashdata <- rename(INVS_dashdata, "Investment" = "VALUE")
+
+
+
+
 
 
 # Labour Force characteristics by industry and province
@@ -104,7 +160,6 @@ EMPL_dashdata <- EMPL_dashdata |>
               values_from = VALUE)
 
 
-df <- merge(GDP_dashdata, EMPL_dashdata, by = c("Year", "GEO", "NAICS"))
 
 
 
@@ -250,9 +305,12 @@ df <- merge(GDP_dashdata, EMPL_dashdata, by = c("Year", "GEO", "NAICS"))
 #                  Value == "Chained (2012) dollars",
 #                  GEO == "Alberta")
 
-
+df <- merge(GDP_dashdata, EMPL_dashdata, by = c("Year", "GEO", "NAICS"))
+df <- merge(df, INVS_dashdata, by = c("Year", "GEO", "NAICS"), all = TRUE)
 
 write.csv(GDP_dashdata, file = "~/BC-Econ-Dashboard/data/processed/GDP_Industry_dash.csv")
 write.csv(EMPL_dashdata, file = "~/BC-Econ-Dashboard/data/processed/EMPL_Industry_dash.csv")
+write.csv(INVS_dashdata, file = "~/BC-Econ-Dashboard/data/processed/INVS_Industry_dash.csv")
+
 write.csv(df, file = "~/BC-Econ-Dashboard/data/processed/GDPEMPL_Industry_dash.csv")
 
