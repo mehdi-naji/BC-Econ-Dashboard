@@ -2,19 +2,9 @@ library(statcanR)
 library(dplyr)
 library(tidyverse)
 
-# GDP - Sector - Provinces
-
-
-
-
-
-
-
-
 
 # GDP by industry and province
 GDP_df <- statcan_download_data("36-10-0402-01", "eng")
-
 GDP_df$REF_DATE <- as.Date(GDP_df$REF_DATE, origin = "2009-01-01")
 GDP_df$Year <- format(GDP_df$REF_DATE, "%Y")
 
@@ -40,23 +30,30 @@ Sectors_GDP <- c("Agriculture, forestry, fishing and hunting",
                  "Public administration",
                  "\\[81\\]")
 
+GDP_df <- GDP_df |>
+            select (Year, GEO, `North American Industry Classification System (NAICS)` , SCALAR_FACTOR, Value, VALUE) |>
+            filter (Value %in% c("Current dollars",
+                                  "Chained (2017) dollars"))|>
+            pivot_wider(names_from = Value, values_from = VALUE)
+
 GDP_dashdata <- GDP_df[grepl(paste(Sectors_GDP, collapse = "|"),  GDP_df$`North American Industry Classification System (NAICS)`), ] |> 
-  filter(  Value == "Chained (2017) dollars") |>
-  select(Year, GEO, `North American Industry Classification System (NAICS)`, VALUE , SCALAR_FACTOR ) |>
-  rename(NAICS = `North American Industry Classification System (NAICS)`) |>
+  rename(NAICS = `North American Industry Classification System (NAICS)`,
+         CurrentValue = `Current dollars`,
+         Chained_2017 = `Chained (2017) dollars`) |>
   mutate(NAICS = case_when(
     NAICS == "Information and cultural industries [51]" ~ "Information, culture and recreation [51, 71]",
     NAICS == "Arts, entertainment and recreation [71]" ~ "Information, culture and recreation [51, 71]",
     TRUE ~ NAICS))|>
   group_by(Year, GEO, NAICS, SCALAR_FACTOR ) |>
-  summarise(VALUE = sum(VALUE))
-
-GDP_dashdata <- rename(GDP_dashdata, "GDP" = "VALUE")
+  summarise(CurrentValue = sum(CurrentValue),
+            Chained_2017 = sum(Chained_2017))
 
 GDP_dashdata <- GDP_dashdata |>
   arrange(Year, GEO, NAICS, SCALAR_FACTOR) |> 
   group_by(GEO, NAICS, SCALAR_FACTOR) |>
-  mutate(GDPG = (GDP/lag(GDP) - 1)*100)
+  mutate(NGDPG = (CurrentValue/lag(CurrentValue) - 1)*100,
+         RGDPG = (Chained_2017/lag(Chained_2017) - 1)*100
+         )
 
 
 

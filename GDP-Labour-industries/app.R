@@ -10,6 +10,9 @@ library(lubridate)
 library(plotly)
 library(leaflet)
 library(cowplot)
+library(grid)
+library(gtable)
+
 options(shiny.autoreload = TRUE)
 
 # =================================================================== #
@@ -20,41 +23,54 @@ url_GDPEMPL <- "https://github.com/mehdi-naji/BC-Econ-Dashboard/raw/main/data/pr
 
 df <- read.csv(url_GDPEMPL, header = TRUE)
 
+dff <- na.omit(df)
+
 Provinces <- unique(df$GEO)
 Industries <- unique(df$NAICS)
-year_range <- unique(df$Year)
-year_min <- min(year_range)
-year_max <- max(year_range)
+year_range_df <- unique(df$Year)
+year_range_dff <- unique(dff$Year)
 
+year_min_range <- min(year_range_df)
+year_max_range <- max(year_range_df)
+
+year_min <- min(year_range_dff)
+year_max <- max(year_range_dff)
 
 # =================================================================== #
 # ------------------------------SHINY UI----------------------------- #
 # =================================================================== #
 ui <- fluidPage(
-  theme = bslib::bs_theme(bootswatch = "darkly"),
+  theme = bslib::bs_theme(bootswatch = "cyborg"),
   titlePanel("Canadian Provinces Production and Employment"),
   fluidRow(
-    column(3,
+    column(2,
       sliderInput("range", "Year Range:", 
-                  min = year_min, max = year_max,
+                  min = year_min_range, max = year_max_range,
                   value = c(year_min, year_max), step = 1,
                   sep = ""),
       uiOutput("province_dropdown"),
-      uiOutput("industry_dropdown"),
-      radioButtons("radio", label = "Select an option",
-                   choices = list("Option 1" = 1, "Option 2" = 2), 
-                   selected = 1)
-    ), column(9, plotlyOutput("cell2"))
-  ),
+      uiOutput("industry_dropdown")
+    ), 
+    column(10, 
+             column(6, offset =6,
+                    radioButtons("type1", label = "",
+                       choices = list("Sort by GDP" = 1, "Sort by Employment" = 2), 
+                       selected = 1, inline=TRUE)
+                    ),
+          plotlyOutput("gdpemp")
+  )),
   fluidRow(
-    column(6, plotlyOutput("cell3")),
-    column(6, plotlyOutput("cell4"))
+    column(6, plotlyOutput("gdplevel")),
+    column(6, plotlyOutput("gdpgrowth"))
     ),
-  fluidRow(column(12, plotOutput("legend"))),
   fluidRow(
-    column(6, plotlyOutput("cell5")),
-    column(6, plotlyOutput("cell6"))
-    )
+    column(6, plotlyOutput("employment")),
+    column(6, plotlyOutput("unemprate"))
+    ),
+  
+  fluidRow(
+    column(6, plotOutput("legend")),
+    column(6, plotlyOutput("investment")))
 )
 
 
@@ -73,8 +89,9 @@ server <- function(input, output, session) {
   })
   
   filtered_df2 <- reactive({
-    df |> filter(GEO %in% input$province[1], 
-                 Year == input$range[2])  |>
+    df |> filter_at(vars(Employment, GDP), all_vars(!is.na(.))) |>
+          filter(GEO %in% input$province[1],
+                 Year == max(Year))  |>
           mutate(color = ifelse(NAICS %in% input$industry, "Bold", "Passive"))
   })
   
@@ -102,17 +119,27 @@ server <- function(input, output, session) {
 
   plt1 <- renderPlotly({
     p1_data <- filtered_df2() 
+    p1_data <- na.omit(p1_data)
     
     max_gdp <- max(p1_data$GDP, na.rm = TRUE)
     max_emp <- max(p1_data$Employment, na.rm = TRUE)
     
     ratio <- max_gdp / max_emp
     
-    p1 <- p1_data |>
-      ggplot() +
-      geom_bar(data = p1_data,
-               aes(x = reorder(NAICS,GDP), y=GDP, color= color, fill = GEO), stat = "identity", position = "dodge") +
-      geom_point(data = p1_data,
+    if (input$type1 == 1) {
+      p1 <- p1_data |>
+        ggplot() +
+        geom_bar(data = p1_data,
+                 aes(x = reorder(NAICS,GDP), y=GDP, color= color, fill = GEO), stat = "identity", position = "dodge")
+    } else {
+      p1 <- p1_data |>
+        ggplot() +
+        geom_bar(data = p1_data,
+                 aes(x = reorder(NAICS,Employment), y=GDP, color= color, fill = GEO), stat = "identity", position = "dodge")
+   }
+    
+    p1 <- p1 +
+        geom_point(data = p1_data,
                  aes(x = reorder(NAICS,GDP), y=Employment * ratio,
                      text = paste0("Province" = GEO, "\n",
                                    "Industry" = NAICS, "\n",
@@ -121,8 +148,16 @@ server <- function(input, output, session) {
                                    "Employmnet = ", Employment, " thousands")), color = "yellow", size = 3)+
       coord_flip() +
       scale_fill_manual(values = c("Bold" = "blue"))+
-      labs(y = "Industry GDP and Employment", title = "Horizontal Bar Plot")+
-      theme(legend.position = "none")
+      labs(y = "Industry GDP", 
+           title = paste0("Industry GDP and Employment of ",
+                          input$province[1],
+                          " in ",
+                          max(p1_data$Year)),
+           x="")+
+      theme(legend.position = "none",
+            axis.text = element_text(size = 14),
+            plot.title = element_text(size = 25))
+    
     ggplotly(p1, tooltip="text")
     
   })
@@ -135,7 +170,9 @@ server <- function(input, output, session) {
     p2 <- ggplot(p2_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_line(aes(y = GDP))+
-      theme(legend.position = "none")
+      labs(title = "GDP by year")+
+      theme(legend.position = "none",
+            plot.title = element_text(size = 20))
     
     
     # Convert ggplot to plotly
@@ -154,7 +191,9 @@ server <- function(input, output, session) {
                                  "Industry GDP = $", GDP," million", "\n",
                                  "Growth = ", round(GDPG,digits=2), "%")), 
                stat = "identity", position = "dodge")+
-      theme(legend.position = "none")
+      labs(title = "GDP Growth by year")+
+      theme(legend.position = "none",
+            plot.title = element_text(size = 20))
     
     
     p3 <- ggplotly(p3, tooltip = "text")
@@ -166,7 +205,9 @@ server <- function(input, output, session) {
     p4 <- ggplot(p4_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_line(aes(y = Employment))+
-      theme(legend.position = "none")
+      labs(title = "Empoyment by year")+
+      theme(legend.position = "none",
+            plot.title = element_text(size = 20))
     
     
     # Convert ggplot to plotly
@@ -185,30 +226,60 @@ server <- function(input, output, session) {
                                  "Industry GDP = $", GDP," million", "\n",
                                  "Growth = ", round(GDPG,digits=2), "%")), 
                stat = "identity", position = "dodge")+
-      theme(legend.position = "none")
+      labs(title = "Unemployment rate by year")+
+      theme(legend.position = "none",
+            plot.title = element_text(size = 20))
     
     p5 <- ggplotly(p5, tooltip = "text")
   })
 
-  plt_legend <- renderPlot({
-    pl_data <- filtered_df()
-    plt <- ggplot(pl_data)+
-      aes(x=Year, y = Employment, fill = interaction(GEO, NAICS)) +
-      geom_col()
-    # Extract the legend from the ggplot object
-    legend <- get_legend(plt)
+  plt_investment <- renderPlotly({
+    pi_data <- filtered_df()
     
-    # Draw the legend without the plot
-    # grid.newpage()
-    print(legend)
+    pi <- ggplot(pi_data)+
+      aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
+      geom_bar(aes(y = Investment, 
+                   text = paste0("Province" = GEO, "\n",
+                                 "Industry" = NAICS, "\n",
+                                 "Year = ", Year,"\n" ,
+                                 "Industry GDP = $", GDP," million", "\n",
+                                 "Growth = ", round(GDPG,digits=2), "%")), 
+               stat = "identity", position = "dodge")+
+      labs(title = "Industry Investment by year")+
+      theme(legend.position = "none",
+            plot.title = element_text(size = 20))
+    
+    pi <- ggplotly(pi, tooltip = "text")
+   
   })
   
-  output$cell2 <- plt1
-  output$cell3 <- plt2
-  output$cell4 <- plt3
-  output$cell5 <- plt4
-  output$cell6 <- plt5
+  
+  plt_legend <- renderPlot({
+    pi_data <- filtered_df()
+    
+    pi <- ggplot(pi_data)+
+      aes(x = Year , fill = interaction(GEO, NAICS)) +
+      geom_bar(aes(y = Investment), 
+               stat = "identity", position = "dodge")+
+      labs(fill = "The Combined Legend") + 
+      theme(legend.text = element_text(size = 25), 
+            legend.title = element_text(size = 25)) 
+    g <- ggplotGrob(pi)
+    
+    legend <- gtable::gtable_filter(g, "guide-box")
+    
+    grid::grid.draw(legend)
+    
+  })
+  
+  output$gdpemp <- plt1
+  output$gdplevel <- plt2
+  output$gdpgrowth <- plt3
+  output$employment <- plt4
+  output$unemprate <- plt5
+  output$investment <- plt_investment
   output$legend <- plt_legend
+  
   
 }
 
