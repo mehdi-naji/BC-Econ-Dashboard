@@ -41,21 +41,28 @@ year_max <- max(year_range_dff)
 # =================================================================== #
 ui <- fluidPage(
   theme = bslib::bs_theme(bootswatch = "cyborg"),
-  titlePanel("Canadian Provinces Production and Employment"),
+  titlePanel("Province-Industry GDP, Employment, and Investment"),
   fluidRow(
     column(2,
       sliderInput("range", "Year Range:", 
                   min = year_min_range, max = year_max_range,
                   value = c(year_min, year_max), step = 1,
                   sep = ""),
+      radioButtons("GDPtype", label = "Select the GDP type:",
+                   choices = list("Real GDP (Chained-2017 dollars)" = 1, "Nominal GDP (Current Price)" = 2), 
+                   selected = 1),
       uiOutput("province_dropdown"),
-      uiOutput("industry_dropdown")
+      uiOutput("industry_dropdown"),
+      downloadButton("download1", "Download as CSV")
     ), 
     column(10, 
-             column(6, offset =6,
+           fluidRow(
+             column(5),
+             column(4, offset = 3,
                     radioButtons("type1", label = "",
-                       choices = list("Sort by GDP" = 1, "Sort by Employment" = 2), 
-                       selected = 1, inline=TRUE)
+                                 choices = list("Sort by GDP" = 1, "Sort by Employment" = 2), 
+                                 selected = 1, inline= TRUE)),
+             column(1)
                     ),
           plotlyOutput("gdpemp")
   )),
@@ -70,7 +77,7 @@ ui <- fluidPage(
   
   fluidRow(
     column(6, plotOutput("legend")),
-    column(6, plotlyOutput("investment")))
+    column(6, plotlyOutput("investment"))),
 )
 
 
@@ -82,20 +89,41 @@ server <- function(input, output, session) {
   thematic::thematic_shiny()
   
   # ======Get Data for Reactivity====== #
-  filtered_df <- reactive({
-      df |> filter(GEO %in% input$province, 
-                  Year >= input$range[1] & Year <= input$range[2],
-                  NAICS %in% input$industry) 
-  })
   
-  filtered_df2 <- reactive({
-    df |> filter_at(vars(Employment, GDP), all_vars(!is.na(.))) |>
+   filtered_df <- reactive({
+     if (input$GDPtype == 1) {
+       df |> filter(GEO %in% input$province, 
+                    Year >= input$range[1] & Year <= input$range[2],
+                    NAICS %in% input$industry) |>
+             rename(GDP = Chained_2017,
+                    GDPG = RGDPG)
+     } else {
+       df |> filter(GEO %in% input$province, 
+                    Year >= input$range[1] & Year <= input$range[2],
+                    NAICS %in% input$industry) |>
+         rename(GDP = CurrentValue,
+                GDPG = NGDPG)
+     }
+    })
+    
+    filtered_df2 <- reactive({
+      if (input$GDPtype == 1) {
+        df |> filter_at(vars(Employment, Chained_2017, CurrentValue), all_vars(!is.na(.))) |>
+              filter(GEO %in% input$province[1],
+                     Year == max(Year))  |>
+              mutate(color = ifelse(NAICS %in% input$industry, "Bold", "Passive"))|>
+              rename(GDP = Chained_2017,
+                     GDPG = RGDPG)
+      } else {
+        df |> filter_at(vars(Employment, Chained_2017, CurrentValue), all_vars(!is.na(.))) |>
           filter(GEO %in% input$province[1],
                  Year == max(Year))  |>
-          mutate(color = ifelse(NAICS %in% input$industry, "Bold", "Passive"))
-  })
+          mutate(color = ifelse(NAICS %in% input$industry, "Bold", "Passive"))|>
+          rename(GDP = CurrentValue,
+                 GDPG = NGDPG)
+      }
+    })
   
- 
   # ======Server Side of Province Input====== #
   output$province_dropdown <- renderUI({
     selectInput("province", 
@@ -167,10 +195,14 @@ server <- function(input, output, session) {
   plt2 <- renderPlotly({
     p2_data <- filtered_df()
     
+    if (input$GDPtype ==1) {xxx = "Real GDP (Chained-2017 dollars)"
+                    } else {xxx = "Nominal GDP (Current Value)"}
+    
     p2 <- ggplot(p2_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_line(aes(y = GDP))+
-      labs(title = "GDP by year")+
+      labs(title = paste0("Province-Industry ",xxx," time series"),
+           y = "Million Dollars")+
       theme(legend.position = "none",
             plot.title = element_text(size = 20))
     
@@ -182,6 +214,9 @@ server <- function(input, output, session) {
   plt3 <- renderPlotly({
     p3_data <- filtered_df()
     
+    if (input$GDPtype ==1) {xxx = "Real GDP (Chained-2017 dollars)"
+    } else {xxx = "Nominal GDP (Current Value)"}
+    
     p3 <- ggplot(p3_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_bar(aes(y = GDPG, 
@@ -191,7 +226,8 @@ server <- function(input, output, session) {
                                  "Industry GDP = $", GDP," million", "\n",
                                  "Growth = ", round(GDPG,digits=2), "%")), 
                stat = "identity", position = "dodge")+
-      labs(title = "GDP Growth by year")+
+      labs(title = paste0("Province-Industry " ,xxx, " Growth"),
+           y = "Million Dollars")+
       theme(legend.position = "none",
             plot.title = element_text(size = 20))
     
@@ -205,7 +241,8 @@ server <- function(input, output, session) {
     p4 <- ggplot(p4_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_line(aes(y = Employment))+
-      labs(title = "Empoyment by year")+
+      labs(title = "Province-Industry Empoyment time series",
+           y = "Thouhsand persons")+
       theme(legend.position = "none",
             plot.title = element_text(size = 20))
     
@@ -216,7 +253,7 @@ server <- function(input, output, session) {
   
   plt5 <- renderPlotly({
     p5_data <- filtered_df()
-    
+
     p5 <- ggplot(p5_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_bar(aes(y = Unemployment.rate, 
@@ -226,7 +263,8 @@ server <- function(input, output, session) {
                                  "Industry GDP = $", GDP," million", "\n",
                                  "Growth = ", round(GDPG,digits=2), "%")), 
                stat = "identity", position = "dodge")+
-      labs(title = "Unemployment rate by year")+
+      labs(title = "Province-Industry Unemployment Rate",
+           y = "Percent")+
       theme(legend.position = "none",
             plot.title = element_text(size = 20))
     
@@ -235,7 +273,6 @@ server <- function(input, output, session) {
 
   plt_investment <- renderPlotly({
     pi_data <- filtered_df()
-    
     pi <- ggplot(pi_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
       geom_bar(aes(y = Investment, 
@@ -245,9 +282,10 @@ server <- function(input, output, session) {
                                  "Industry GDP = $", GDP," million", "\n",
                                  "Growth = ", round(GDPG,digits=2), "%")), 
                stat = "identity", position = "dodge")+
-      labs(title = "Industry Investment by year")+
+      labs(title = "Province-Industry Investment (Capital Expenditure) - Current Value",
+           y = "Million Dollars")+
       theme(legend.position = "none",
-            plot.title = element_text(size = 20))
+            plot.title = element_text(size = 16))
     
     pi <- ggplotly(pi, tooltip = "text")
    
@@ -280,8 +318,13 @@ server <- function(input, output, session) {
   output$investment <- plt_investment
   output$legend <- plt_legend
   
-  
-}
+  # Download handler
+  output$download1 <- downloadHandler(
+    filename = "data.csv", 
+    content = function(file) {
+      write.csv(filtered_df(), file)})}
+
+    
 
   
   
