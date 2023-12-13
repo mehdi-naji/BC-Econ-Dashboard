@@ -1,6 +1,4 @@
-# =================================================================== #
-# ------------------------------IMPORTS------------------------------ #
-# =================================================================== #
+# Libraries ----
 library(shiny)
 library(ggplot2)
 library(tidyr)
@@ -15,14 +13,9 @@ library(gtable)
 
 options(shiny.autoreload = TRUE)
 
-# =================================================================== #
-# --------------------------DATA ------------------------------------ #
-# =================================================================== #
-
+# Import data ----
 url_GDPEMPL <- "https://github.com/mehdi-naji/BC-Econ-Dashboard/raw/main/data/processed/GDPEMPL_Industry_dash.csv"
-
 df <- read.csv(url_GDPEMPL, header = TRUE)
-
 dff <- na.omit(df)
 
 Provinces <- unique(df$GEO)
@@ -36,9 +29,7 @@ year_max_range <- max(year_range_df)
 year_min <- min(year_range_dff)
 year_max <- max(year_range_dff)
 
-# =================================================================== #
-# ------------------------------SHINY UI----------------------------- #
-# =================================================================== #
+# UI ----
 ui <- fluidPage(
   theme = bslib::bs_theme(bootswatch = "cyborg"),
   titlePanel("Province-Industry GDP, Employment, and Investment"),
@@ -50,6 +41,9 @@ ui <- fluidPage(
                   sep = ""),
       radioButtons("GDPtype", label = "Select the GDP type:",
                    choices = list("Real GDP (Chained-2017 dollars)" = 1, "Nominal GDP (Current Price)" = 2), 
+                   selected = 1),
+      radioButtons("GDPperCapita", label = "Select the Scale for GDP:",
+                   choices = list("Whole Economy" = 1, "Per Capita" = 2), 
                    selected = 1),
       uiOutput("province_dropdown"),
       uiOutput("industry_dropdown"),
@@ -80,30 +74,37 @@ ui <- fluidPage(
     column(6, plotlyOutput("investment"))),
 )
 
-
-# =================================================================== #
-# ------------------------------SHINY SERVER------------------------- #
-# =================================================================== #
-
+# Server ----
 server <- function(input, output, session) {
   thematic::thematic_shiny()
   
-  # ======Get Data for Reactivity====== #
+## Get Data for Reactivity ----
   
    filtered_df <- reactive({
-     if (input$GDPtype == 1) {
-       df |> filter(GEO %in% input$province, 
+     if (input$GDPtype == 1 & input$GDPperCapita ==1) {  
+     df |> filter(GEO %in% input$province, 
                     Year >= input$range[1] & Year <= input$range[2],
                     NAICS %in% input$industry) |>
-             rename(GDP = Chained_2017,
-                    GDPG = RGDPG)
-     } else {
+              rename(GDP = Chained_2017,
+                     GDPG = RGDPG) }
+     else if (input$GDPtype == 2 & input$GDPperCapita == 1) {  
        df |> filter(GEO %in% input$province, 
                     Year >= input$range[1] & Year <= input$range[2],
                     NAICS %in% input$industry) |>
          rename(GDP = CurrentValue,
-                GDPG = NGDPG)
-     }
+                GDPG = NGDPG) }
+     else if (input$GDPtype == 1 & input$GDPperCapita ==2) {  
+       df |> filter(GEO %in% input$province, 
+                    Year >= input$range[1] & Year <= input$range[2],
+                    NAICS %in% input$industry) |>
+         rename(GDP = Chained_2017PerCapita,
+                GDPG = RGDPG) }
+     else if(input$GDPtype == 2 & input$GDPperCapita ==2) {  
+       df |> filter(GEO %in% input$province, 
+                    Year >= input$range[1] & Year <= input$range[2],
+                    NAICS %in% input$industry) |>
+         rename(GDP = CurrentValuePerCapita,
+                GDPG = NGDPG) }
     })
     
     filtered_df2 <- reactive({
@@ -124,7 +125,7 @@ server <- function(input, output, session) {
       }
     })
   
-  # ======Server Side of Province Input====== #
+  ## Server Side of Province Input======
   output$province_dropdown <- renderUI({
     selectInput("province", 
                 "Select Provinces", 
@@ -134,7 +135,7 @@ server <- function(input, output, session) {
     )
   })
   
-  # ======Server Side of Industry Input====== #
+  ## Server Side of Industry Input====== 
   output$industry_dropdown <- renderUI({
     selectInput("industry", 
                 "Select Industries", 
@@ -144,7 +145,7 @@ server <- function(input, output, session) {
     )
   })
   
-
+### First Plot ----
   plt1 <- renderPlotly({
     p1_data <- filtered_df2() 
     p1_data <- na.omit(p1_data)
@@ -191,26 +192,44 @@ server <- function(input, output, session) {
   })
   
   
-  
+    ### GDP Plot ----
+    
   plt2 <- renderPlotly({
     p2_data <- filtered_df()
     
-    if (input$GDPtype ==1) {xxx = "Real GDP (Chained-2017 dollars)"
-                    } else {xxx = "Nominal GDP (Current Value)"}
-    
+    if (input$GDPtype ==1 & input$GDPperCapita ==1) {
+      xxx = "Real GDP (Chained-2017 dollars)"
+      yy = 0.01
+      yyy = "Billion Dollars"
+    } else if (input$GDPtype ==2 & input$GDPperCapita ==1) {
+      xxx = "Nominal GDP (Current Value)"
+      yy = 0.01
+      yyy = "Billion Dollars"
+    } else if (input$GDPtype ==1 & input$GDPperCapita ==2) {
+      xxx = "Real GDP Per Capita (Chained-2017)"
+      yy = 10000
+      yyy = "Thousand Dollars"
+    } else if (input$GDPtype ==2 & input$GDPperCapita ==2) {
+      xxx = "Nominal GDP Per Capita (Current Value)"
+      yy = 10000
+      yyy = "Thousand Dollars"
+    }
+      
     p2 <- ggplot(p2_data)+
       aes(x = Year , fill = interaction(GEO, NAICS), color = interaction(GEO, NAICS)) +
-      geom_line(aes(y = GDP))+
+      geom_line(aes(y = GDP * yy))+
       labs(title = paste0("Province-Industry ",xxx," time series"),
-           y = "Million Dollars")+
+           y = yyy)+
       theme(legend.position = "none",
             plot.title = element_text(size = 20))
     
     
-    # Convert ggplot to plotly
+    #Convert ggplot to plotly
     p2 <- ggplotly(p2)
   })
   
+    ### GDP Growth Plot ----
+    
   plt3 <- renderPlotly({
     p3_data <- filtered_df()
     
@@ -235,6 +254,8 @@ server <- function(input, output, session) {
     p3 <- ggplotly(p3, tooltip = "text")
   })
   
+    ### Employment Plot ----
+    
   plt4 <- renderPlotly({
     p4_data <- filtered_df()
     
@@ -251,6 +272,8 @@ server <- function(input, output, session) {
     p4 <- ggplotly(p4)
   })
   
+    ### Unemployment Plot ----
+    
   plt5 <- renderPlotly({
     p5_data <- filtered_df()
 
@@ -271,6 +294,8 @@ server <- function(input, output, session) {
     p5 <- ggplotly(p5, tooltip = "text")
   })
 
+    ### Investment Plot ----
+    
   plt_investment <- renderPlotly({
     pi_data <- filtered_df()
     pi <- ggplot(pi_data)+
@@ -323,12 +348,7 @@ server <- function(input, output, session) {
     filename = "data.csv", 
     content = function(file) {
       write.csv(filtered_df(), file)})}
-
-    
-
-  
-  
-# Run the Shiny app
+# Run the Shiny app ----
 shinyApp(ui = ui, server = server)
 
 
