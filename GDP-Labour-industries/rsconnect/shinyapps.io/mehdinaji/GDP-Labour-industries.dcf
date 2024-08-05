@@ -1,0 +1,12 @@
+name: GDP-Labour-industries
+title: GDP-Labour-industries
+username: mehdinaji
+account: mehdinaji
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 12380720
+bundleId: 8921897
+url: https://mehdinaji.shinyapps.io/GDP-Labour-industries/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE
